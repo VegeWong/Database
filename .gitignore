@@ -1,0 +1,9 @@
+# Suppressed file
+*.zip
+*.tar
+*.gz
+
+# Document
+*.pdf
+*.ppt
+*.pptx
