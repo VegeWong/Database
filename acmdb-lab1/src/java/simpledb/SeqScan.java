@@ -11,6 +11,10 @@ public class SeqScan implements DbIterator {
 
     private static final long serialVersionUID = 1L;
 
+    private DbFile _file;
+    private DbFileIterator _fitr;
+    private String _alias;
+    private TransactionId _tid;
     /**
      * Creates a sequential scan over the specified table as a part of the
      * specified transaction.
@@ -29,6 +33,13 @@ public class SeqScan implements DbIterator {
      */
     public SeqScan(TransactionId tid, int tableid, String tableAlias) {
         // some code goes here
+        _file =Database.getCatalog().getDatabaseFile(tableid);
+        _fitr = _file.iterator(tid);
+        if (tableAlias == null)
+            _alias = "null";
+        else
+            _alias = tableAlias;
+        _tid = tid;
     }
 
     /**
@@ -46,7 +57,7 @@ public class SeqScan implements DbIterator {
     public String getAlias()
     {
         // some code goes here
-        return null;
+        return _alias;
     }
 
     /**
@@ -63,6 +74,10 @@ public class SeqScan implements DbIterator {
      */
     public void reset(int tableid, String tableAlias) {
         // some code goes here
+        _fitr.close();
+        _alias = tableAlias;
+        _file =Database.getCatalog().getDatabaseFile(tableid);
+        _fitr = _file.iterator(_tid);
     }
 
     public SeqScan(TransactionId tid, int tableid) {
@@ -71,6 +86,13 @@ public class SeqScan implements DbIterator {
 
     public void open() throws DbException, TransactionAbortedException {
         // some code goes here
+        try {
+            _fitr.open();
+        } catch (DbException e) {
+            throw e;
+        } catch (TransactionAbortedException e) {
+            throw e;
+        }
     }
 
     /**
@@ -85,26 +107,59 @@ public class SeqScan implements DbIterator {
      */
     public TupleDesc getTupleDesc() {
         // some code goes here
-        return null;
+        TupleDesc _td = _file.getTupleDesc();
+        int _len = _td.numFields();
+        Type[] _type = new Type[_len];
+        String[] _fieldAr = new String[_len];
+        for (int i = 0; i < _td.numFields(); ++i) {
+            _type[i] = _td.getFieldType(i);
+            StringBuffer sbuffer = (new StringBuffer(_alias)).append(".");
+            _fieldAr[i] = sbuffer.append(_td.getFieldName(i)).toString();
+        }
+        return new TupleDesc(_type, _fieldAr);
     }
 
     public boolean hasNext() throws TransactionAbortedException, DbException {
         // some code goes here
-        return false;
+        try {
+            return _fitr.hasNext();
+        } catch (DbException e) {
+            throw e;
+        } catch (TransactionAbortedException e) {
+            throw e;
+        }
     }
 
     public Tuple next() throws NoSuchElementException,
             TransactionAbortedException, DbException {
         // some code goes here
-        return null;
+        try {
+            return _fitr.next();
+        } catch (DbException e) {
+            throw e;
+        } catch (TransactionAbortedException e) {
+            throw e;
+        } catch (NoSuchElementException e) {
+            throw e;
+        }
     }
 
     public void close() {
         // some code goes here
+        _fitr.close();
     }
 
     public void rewind() throws DbException, NoSuchElementException,
             TransactionAbortedException {
         // some code goes here
+        try {
+            _fitr.rewind();
+        } catch (DbException e) {
+            throw e;
+        } catch (TransactionAbortedException e) {
+            throw e;
+        } catch (NoSuchElementException e) {
+            throw e;
+        }
     }
 }

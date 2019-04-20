@@ -1,8 +1,10 @@
 package simpledb;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
+import java.util.NoSuchElementException;
 
 /**
  * Tuple maintains information about the contents of a tuple. Tuples have a
@@ -13,6 +15,11 @@ public class Tuple implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
+    private TupleDesc _schema;
+    private Field[] _fieldAr;
+    private RecordId _rid;
+    private static final String errMsg_indexOutOfBounds = "Request index out of bounds";
+    private static final String errMsg_cannotFindName = "Can not find field with given name";
     /**
      * Create a new tuple with the specified schema (type).
      *
@@ -22,6 +29,9 @@ public class Tuple implements Serializable {
      */
     public Tuple(TupleDesc td) {
         // some code goes here
+        // modified: 2019.4.18
+        this._schema = td;
+        this._fieldAr = new Field[td.numFields()];
     }
 
     /**
@@ -29,7 +39,8 @@ public class Tuple implements Serializable {
      */
     public TupleDesc getTupleDesc() {
         // some code goes here
-        return null;
+        // modified: 2019.4.18
+        return _schema;
     }
 
     /**
@@ -38,7 +49,7 @@ public class Tuple implements Serializable {
      */
     public RecordId getRecordId() {
         // some code goes here
-        return null;
+        return _rid;
     }
 
     /**
@@ -49,6 +60,7 @@ public class Tuple implements Serializable {
      */
     public void setRecordId(RecordId rid) {
         // some code goes here
+        _rid = rid;
     }
 
     /**
@@ -61,6 +73,8 @@ public class Tuple implements Serializable {
      */
     public void setField(int i, Field f) {
         // some code goes here
+        // modified: 2019.4.18
+        _fieldAr[i] = f;
     }
 
     /**
@@ -69,9 +83,13 @@ public class Tuple implements Serializable {
      * @param i
      *            field index to return. Must be a valid index.
      */
-    public Field getField(int i) {
+    public Field getField(int i) throws NoSuchElementException {
         // some code goes here
-        return null;
+        // modified: 2019.4.18
+        if (i < _fieldAr.length)
+            return _fieldAr[i];
+        else
+            throw new NoSuchElementException(errMsg_indexOutOfBounds);
     }
 
     /**
@@ -84,7 +102,15 @@ public class Tuple implements Serializable {
      */
     public String toString() {
         // some code goes here
-        throw new UnsupportedOperationException("Implement this");
+        // modified: 2019.4.18
+        if (_fieldAr.length == 0)
+            return "";
+        StringBuffer sbuffer = new StringBuffer(_fieldAr[0].toString());
+        for (int i = 1; i < _fieldAr.length; ++i) {
+            sbuffer.append("\t");
+            sbuffer.append(_fieldAr[i].toString());
+        }
+        return sbuffer.toString();
     }
 
     /**
@@ -94,7 +120,27 @@ public class Tuple implements Serializable {
     public Iterator<Field> fields()
     {
         // some code goes here
-        return null;
+        // modified: 2019.4.18
+        class FieldIterator implements Iterator<Field> {
+            private int _curIndex;
+            private Field[] _fdPtr;
+
+            public FieldIterator(Field[] ptr) {
+                _fdPtr = ptr;
+                _curIndex = 0;
+            }
+
+            @Override
+            public boolean hasNext() {
+                return  _curIndex < _fdPtr.length;
+            }
+
+            @Override
+            public Field next() {
+                return _fdPtr[_curIndex++];
+            }
+        }
+        return new FieldIterator(this._fieldAr);
     }
 
     /**
@@ -103,5 +149,8 @@ public class Tuple implements Serializable {
     public void resetTupleDesc(TupleDesc td)
     {
         // some code goes here
+        // modified: 2019.4.18
+        _schema = td;
+        _fieldAr = new Field[td.numFields()];
     }
 }

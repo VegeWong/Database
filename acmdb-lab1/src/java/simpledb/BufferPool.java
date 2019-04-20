@@ -2,6 +2,7 @@ package simpledb;
 
 import java.io.*;
 
+import java.util.NoSuchElementException;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -20,7 +21,11 @@ public class BufferPool {
     private static final int PAGE_SIZE = 4096;
 
     private static int pageSize = PAGE_SIZE;
-    
+
+    private int _maxPageNum;
+    private ConcurrentHashMap<PageId, Page> _pidMapedPage;
+    private ConcurrentHashMap<PageId, TransactionId> _pidMapedTrans;
+
     /** Default number of pages passed to the constructor. This is used by
     other classes. BufferPool should use the numPages argument to the
     constructor instead. */
@@ -33,8 +38,11 @@ public class BufferPool {
      */
     public BufferPool(int numPages) {
         // some code goes here
+        _maxPageNum = numPages;
+        _pidMapedPage = new ConcurrentHashMap<PageId, Page>();
+        _pidMapedTrans = new ConcurrentHashMap<PageId, TransactionId>();
     }
-    
+
     public static int getPageSize() {
       return pageSize;
     }
@@ -67,7 +75,24 @@ public class BufferPool {
     public  Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
         // some code goes here
-        return null;
+
+        // Check Lock
+        TransactionId _tid = _pidMapedTrans.get(pid);
+        if (_tid != null && !_tid.equals(tid))
+            throw new TransactionAbortedException();
+
+        Page _page = _pidMapedPage.get(pid);
+        _pidMapedTrans.put(pid, tid);
+        if (_page == null) try {
+            DbFile _file = Database.getCatalog().getDatabaseFile(pid.getTableId());
+            _page = _file.readPage(pid);
+            _pidMapedPage.put(pid, _page);
+        } catch (NoSuchElementException e) {
+            System.out.println(e.toString());
+            throw new DbException("Get Dbfile failed");
+        }
+
+        return _page;
     }
 
     /**
@@ -81,6 +106,7 @@ public class BufferPool {
      */
     public  void releasePage(TransactionId tid, PageId pid) {
         // some code goes here
+        _pidMapedTrans.remove(pid);
         // not necessary for lab1|lab2
     }
 

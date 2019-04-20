@@ -4,6 +4,17 @@
 *.gz
 
 # Document
-*.pdf
-*.ppt
-*.pptx
+./*.pdf
+./*.ppt
+./*.pptx
+
+# Idea immediate file
+**/*.iml
+**/.idea
+
+# Build File
+**/test
+**/depcache
+**/dist
+**/bin
+**/log

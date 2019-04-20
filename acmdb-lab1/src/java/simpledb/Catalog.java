@@ -1,9 +1,6 @@
 package simpledb;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileReader;
-import java.io.IOException;
+import java.io.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -22,8 +19,25 @@ public class Catalog {
      * Constructor.
      * Creates a new, empty catalog.
      */
+    public static class Table implements Serializable {
+        public DbFile file;
+        public String name;
+        public String pkeyField;
+
+        public Table(DbFile file, String name, String pkeyField) {
+            this.file = file;
+            this.name = name;
+            this.pkeyField = pkeyField;
+        }
+    }
+
+    private ConcurrentHashMap<Integer, Table> _idMappedTable;
+    private ConcurrentHashMap<String, Integer> _nameMappedTable;
+
     public Catalog() {
         // some code goes here
+        _idMappedTable = new ConcurrentHashMap<Integer, Table>();
+        _nameMappedTable = new ConcurrentHashMap<String, Integer>();
     }
 
     /**
@@ -37,6 +51,8 @@ public class Catalog {
      */
     public void addTable(DbFile file, String name, String pkeyField) {
         // some code goes here
+        _idMappedTable.put(file.getId(), new Table(file, name, pkeyField));
+        _nameMappedTable.put(name, file.getId());
     }
 
     public void addTable(DbFile file, String name) {
@@ -60,7 +76,12 @@ public class Catalog {
      */
     public int getTableId(String name) throws NoSuchElementException {
         // some code goes here
-        return 0;
+        if (name == null)
+            throw new NoSuchElementException("Can not find table with null name");
+        Integer _tableId = _nameMappedTable.get(name);
+        if (_tableId != null)
+            return _tableId;
+        throw new NoSuchElementException("Can not find table with name:".concat(name));
     }
 
     /**
@@ -71,7 +92,10 @@ public class Catalog {
      */
     public TupleDesc getTupleDesc(int tableid) throws NoSuchElementException {
         // some code goes here
-        return null;
+        TupleDesc _schema = _idMappedTable.get(tableid).file.getTupleDesc();
+        if (_schema != null)
+            return _schema;
+        throw new NoSuchElementException("Can not find table with table id:".concat(String.valueOf(tableid)));
     }
 
     /**
@@ -82,27 +106,37 @@ public class Catalog {
      */
     public DbFile getDatabaseFile(int tableid) throws NoSuchElementException {
         // some code goes here
-        return null;
+        DbFile _file = _idMappedTable.get(tableid).file;
+        if (_file != null)
+            return _file;
+        throw new NoSuchElementException("Can not find table with table id:".concat(String.valueOf(tableid)));
     }
 
     public String getPrimaryKey(int tableid) {
         // some code goes here
-        return null;
+        String _pkey = _idMappedTable.get(tableid).pkeyField;
+        if (_pkey != null)
+            return _pkey;
+        throw new NoSuchElementException("Can not find table with table id:".concat(String.valueOf(tableid)));
     }
 
     public Iterator<Integer> tableIdIterator() {
         // some code goes here
-        return null;
+        return _idMappedTable.keySet().iterator();
     }
 
     public String getTableName(int id) {
         // some code goes here
-        return null;
+        String _name = _idMappedTable.get(id).name;
+        if (_name != null)
+            return _name;
+        throw new NoSuchElementException("Can not find table with table id:".concat(String.valueOf(id)));
     }
     
     /** Delete all tables from the catalog */
     public void clear() {
         // some code goes here
+        _idMappedTable.clear();
     }
     
     /**

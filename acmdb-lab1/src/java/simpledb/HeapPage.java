@@ -67,18 +67,16 @@ public class HeapPage implements Page {
     */
     private int getNumTuples() {        
         // some code goes here
-        return 0;
-
+        return (BufferPool.getPageSize() * 8) /  (td.getSize() * 8 + 1);
     }
 
     /**
      * Computes the number of bytes in the header of a page in a HeapFile with each tuple occupying tupleSize bytes
      * @return the number of bytes in the header of a page in a HeapFile with each tuple occupying tupleSize bytes
      */
-    private int getHeaderSize() {        
-        
+    private int getHeaderSize() {
         // some code goes here
-        return 0;
+        return (int) Math.ceil((double) this.numSlots / 8);
                  
     }
     
@@ -111,8 +109,8 @@ public class HeapPage implements Page {
      * @return the PageId associated with this page.
      */
     public HeapPageId getId() {
-    // some code goes here
-    throw new UnsupportedOperationException("implement this");
+        // some code goes here
+        return pid;
     }
 
     /**
@@ -282,7 +280,11 @@ public class HeapPage implements Page {
      */
     public int getNumEmptySlots() {
         // some code goes here
-        return 0;
+        int _numEmpSlot = 0;
+        for (int i = 0; i < tuples.length; ++i)
+            if (!isSlotUsed(i))
+                ++_numEmpSlot;
+        return _numEmpSlot;
     }
 
     /**
@@ -290,7 +292,9 @@ public class HeapPage implements Page {
      */
     public boolean isSlotUsed(int i) {
         // some code goes here
-        return false;
+        int _ind = (int) i / 8;
+        int _rem = i - _ind * 8;
+        return ((header[_ind] & (1 << _rem)) == (1 << _rem));
     }
 
     /**
@@ -307,7 +311,47 @@ public class HeapPage implements Page {
      */
     public Iterator<Tuple> iterator() {
         // some code goes here
-        return null;
+        class InPageTupleIterator implements Iterator<Tuple> {
+
+            private int _curSlotNo;
+
+            public InPageTupleIterator() {
+                _curSlotNo = -1;
+                for (int i = 0; i < tuples.length; ++i) {
+                    if (isSlotUsed(i)) {
+                        _curSlotNo = i;
+                        break;
+                    }
+                }
+            }
+
+            @Override
+            public boolean hasNext() {
+                if (_curSlotNo == -1)
+                    return false;
+                return isSlotUsed(_curSlotNo);
+            }
+
+            @Override
+            public Tuple next() {
+                int _preSlotNo = _curSlotNo;
+                for (int i = _curSlotNo + 1; i < tuples.length; ++i) {
+                    if (isSlotUsed(i)) {
+                        _curSlotNo = i;
+                        break;
+                    }
+                }
+                if (_preSlotNo == _curSlotNo)
+                    _curSlotNo = -1;
+                return tuples[_preSlotNo];
+            }
+
+            @Override
+            public void remove() throws UnsupportedOperationException{
+                throw new UnsupportedOperationException();
+            }
+        }
+        return new InPageTupleIterator();
     }
 
 }
