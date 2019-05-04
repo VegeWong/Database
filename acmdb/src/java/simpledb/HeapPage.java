@@ -22,6 +22,7 @@ public class HeapPage implements Page {
     byte[] oldData;
     private final Byte oldDataLock=new Byte((byte)0);
 
+    TransactionId lastModifiedTid;
     /**
      * Create a HeapPage from a set of bytes of data read from disk.
      * The format of a HeapPage is a set of header bytes indicating
@@ -42,6 +43,10 @@ public class HeapPage implements Page {
         this.pid = id;
         this.td = Database.getCatalog().getTupleDesc(id.getTableId());
         this.numSlots = getNumTuples();
+
+        //lab2
+        this.lastModifiedTid = null;
+
         DataInputStream dis = new DataInputStream(new ByteArrayInputStream(data));
 
         // allocate and read the header slots of this page
@@ -233,6 +238,10 @@ public class HeapPage implements Page {
         return new byte[len]; //all 0
     }
 
+    private boolean validTupleNo(int tupleNo) {
+        return (tupleNo >= 0 && tupleNo < numSlots);
+    }
+
     /**
      * Delete the specified tuple from the page;  the tuple should be updated to reflect
      *   that it is no longer stored on any page.
@@ -243,6 +252,17 @@ public class HeapPage implements Page {
     public void deleteTuple(Tuple t) throws DbException {
         // some code goes here
         // not necessary for lab1
+
+        RecordId rid = t.getRecordId();
+        if (rid == null)
+            throw new DbException("Deletion failed: Invalid record");
+        if (!validTupleNo(rid.tupleno()) || !isSlotUsed(rid.tupleno()))
+            throw new DbException("Deletion failed: Can not find certain tuple");
+        if (t != tuples[rid.tupleno()])
+            throw new DbException("Deletion failed: Target mismatch");
+
+        t.setRecordId(null);
+        markSlotUsed(rid.tupleno(), false);
     }
 
     /**
@@ -255,6 +275,21 @@ public class HeapPage implements Page {
     public void insertTuple(Tuple t) throws DbException {
         // some code goes here
         // not necessary for lab1
+
+        if (!td.equals(t))
+            throw new DbException("Insertion failed: Tuple descriptor mismatch");
+
+        int i;
+        for (i = 0; i < tuples.length; ++i) {
+            if (!isSlotUsed(i))
+                break;
+        }
+        if (i == tuples.length)
+            throw new DbException("Insertion failed: No empty slot in heap page");
+
+        t.setRecordId(new RecordId(pid, i));
+        tuples[i] = t;
+        markSlotUsed(i, true);
     }
 
     /**
@@ -263,7 +298,8 @@ public class HeapPage implements Page {
      */
     public void markDirty(boolean dirty, TransactionId tid) {
         // some code goes here
-	// not necessary for lab1
+	    // not necessary for lab1
+        this.lastModifiedTid = dirty? tid : null;
     }
 
     /**
@@ -271,8 +307,8 @@ public class HeapPage implements Page {
      */
     public TransactionId isDirty() {
         // some code goes here
-	// Not necessary for lab1
-        return null;      
+	    // Not necessary for lab1
+        return this.lastModifiedTid;
     }
 
     /**
@@ -303,6 +339,12 @@ public class HeapPage implements Page {
     private void markSlotUsed(int i, boolean value) {
         // some code goes here
         // not necessary for lab1
+        int _ind = (int) i / 8;
+        int _rem = i - _ind * 8;
+
+        header[_ind] = value? (byte) (header[_ind] | (1 << _rem)) :
+                (byte) (header[_ind] & (-1 ^ (1 << _rem)));
+
     }
 
     /**

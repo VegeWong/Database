@@ -88,6 +88,13 @@ public class HeapFile implements DbFile {
     public void writePage(Page page) throws IOException {
         // some code goes here
         // not necessary for lab1
+        try {
+            RandomAccessFile _fptr = new RandomAccessFile(_file, "w");
+            _fptr.seek(page.getId().pageNumber() * BufferPool.getPageSize());
+            _fptr.write(page.getPageData(), 0, BufferPool.getPageSize());
+        } catch (FileNotFoundException e) {
+            throw new IOException();
+        }
     }
 
     /**
@@ -102,16 +109,16 @@ public class HeapFile implements DbFile {
     public ArrayList<Page> insertTuple(TransactionId tid, Tuple t)
             throws DbException, IOException, TransactionAbortedException {
         // some code goes here
-        return null;
         // not necessary for lab1
+        return null;
     }
 
     // see DbFile.java for javadocs
     public ArrayList<Page> deleteTuple(TransactionId tid, Tuple t) throws DbException,
             TransactionAbortedException {
         // some code goes here
-        return null;
         // not necessary for lab1
+        return null;
     }
 
     // see DbFile.java for javadocs
@@ -133,8 +140,6 @@ public class HeapFile implements DbFile {
                     _curPgNo = _nxtPgNo;
                     _curPgItr = ((HeapPage) Database.getBufferPool().getPage(tid, new HeapPageId(_tableId, _nxtPgNo++), _per)).iterator();
                 } catch (DbException e) {
-                    throw e;
-                } catch (TransactionAbortedException e) {
                     throw e;
                 }
             }
