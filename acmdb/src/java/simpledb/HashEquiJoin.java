@@ -9,6 +9,12 @@ public class HashEquiJoin extends Operator {
 
     private static final long serialVersionUID = 1L;
 
+    private JoinPredicate p;
+    private DbIterator child1;
+    private DbIterator child2;
+    private TupleDesc td;
+    private List<Tuple> filteredTuples;
+    private TupleIterator filteredTupItr;
     /**
      * Constructor. Accepts to children to join and the predicate to join them
      * on
@@ -22,41 +28,104 @@ public class HashEquiJoin extends Operator {
      */
     public HashEquiJoin(JoinPredicate p, DbIterator child1, DbIterator child2) {
         // some code goes here
+        this.p = p;
+        this.child1 = child1;
+        this.child2 = child2;
+        this.td = null;
+        this.filteredTuples = new LinkedList<Tuple>();
+        this.filteredTupItr = null;
     }
 
     public JoinPredicate getJoinPredicate() {
         // some code goes here
-        return null;
+        return p;
     }
 
     public TupleDesc getTupleDesc() {
         // some code goes here
-        return null;
+        if (td == null)
+            td = TupleDesc.merge(child1.getTupleDesc(), child2.getTupleDesc());
+        return td;
     }
     
     public String getJoinField1Name()
     {
         // some code goes here
-	return null;
+        return child1.getTupleDesc().getFieldName(p.getField1());
     }
 
     public String getJoinField2Name()
     {
         // some code goes here
-        return null;
+        return child2.getTupleDesc().getFieldName(p.getField2());
     }
-    
+
+    private void hashJoin() throws DbException, TransactionAbortedException {
+        Tuple tp;
+        Field fd;
+        int len1 = child1.getTupleDesc().numFields();
+        int len2 = child2.getTupleDesc().numFields();
+        int fieldInd1 = p.getField1();
+        int fieldInd2 = p.getField2();
+        List<Tuple> tpArr;
+        Hashtable<Field, List<Tuple>> hashTable = new Hashtable<Field, List<Tuple>>();
+
+        while (child2.hasNext()) {
+            tp = child2.next();
+            fd = tp.getField(fieldInd2);
+            tpArr = hashTable.get(fd);
+            if (tpArr == null) {
+                tpArr = new LinkedList<Tuple>();
+                hashTable.put(fd, tpArr);
+            }
+            tpArr.add(tp);
+        }
+        child2.rewind();
+
+        while (child1.hasNext()) {
+            tp = child1.next();
+            fd = tp.getField(fieldInd1);
+            tpArr = hashTable.get(fd);
+            if (tpArr == null)
+                continue;
+            for (Tuple _t : tpArr) {
+                Tuple newTp = new Tuple(td);
+                int ind, now;
+                for (ind = 0, now = 0; now < len1; ++ind, ++now)
+                    newTp.setField(ind, tp.getField(now));
+                for (now = 0; now < len2; ++now, ++ind)
+                    newTp.setField(ind, _t.getField(now));
+                filteredTuples.add(newTp);
+            }
+        }
+        filteredTupItr = new TupleIterator(td, filteredTuples);
+    }
     public void open() throws DbException, NoSuchElementException,
             TransactionAbortedException {
         // some code goes here
+        child1.open();
+        child2.open();
+        super.open();
+        td = TupleDesc.merge(child1.getTupleDesc(),
+                child2.getTupleDesc());
+        hashJoin();
+        filteredTupItr.open();
     }
 
     public void close() {
         // some code goes here
+        child2.close();
+        child1.close();
+        super.close();
+        filteredTuples.clear();
+        filteredTupItr = null;
     }
 
     public void rewind() throws DbException, TransactionAbortedException {
         // some code goes here
+        child2.rewind();
+        child1.rewind();
+        filteredTupItr.rewind();
     }
 
     transient Iterator<Tuple> listIt = null;
@@ -81,18 +150,28 @@ public class HashEquiJoin extends Operator {
      */
     protected Tuple fetchNext() throws TransactionAbortedException, DbException {
         // some code goes here
-        return null;
+        if (filteredTupItr.hasNext())
+            return filteredTupItr.next();
+        else
+            return null;
     }
 
     @Override
     public DbIterator[] getChildren() {
         // some code goes here
-        return null;
+        return new DbIterator[]{
+                child1,
+                child2
+        };
     }
 
     @Override
     public void setChildren(DbIterator[] children) {
         // some code goes here
+        child1 = children[0];
+        child2 = children[1];
+        filteredTuples.clear();
+        filteredTupItr = null;
     }
     
 }
