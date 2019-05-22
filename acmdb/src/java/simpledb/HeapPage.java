@@ -256,12 +256,15 @@ public class HeapPage implements Page {
         RecordId rid = t.getRecordId();
         if (rid == null)
             throw new DbException("Deletion failed: Invalid record");
+        PageId pid = rid.getPageId();
+        if (pid == null || !pid.equals(this.getId()))
+            throw new DbException("Deletion failed: Wrong deletion page");
         if (!validTupleNo(rid.tupleno()) || !isSlotUsed(rid.tupleno()))
             throw new DbException("Deletion failed: Can not find certain tuple");
-        if (t != tuples[rid.tupleno()])
-            throw new DbException("Deletion failed: Target mismatch");
+//        if (!t.equals(tuples[rid.tupleno()]))
+//            throw new DbException("Deletion failed: Target mismatch");
 
-        t.setRecordId(null);
+//        t.setRecordId(null);
         markSlotUsed(rid.tupleno(), false);
     }
 
@@ -276,7 +279,7 @@ public class HeapPage implements Page {
         // some code goes here
         // not necessary for lab1
 
-        if (!td.equals(t))
+        if (!td.equals(t.getTupleDesc()))
             throw new DbException("Insertion failed: Tuple descriptor mismatch");
 
         int i;

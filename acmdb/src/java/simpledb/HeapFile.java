@@ -89,7 +89,7 @@ public class HeapFile implements DbFile {
         // some code goes here
         // not necessary for lab1
         try {
-            RandomAccessFile _fptr = new RandomAccessFile(_file, "w");
+            RandomAccessFile _fptr = new RandomAccessFile(_file, "rw");
             _fptr.seek(page.getId().pageNumber() * BufferPool.getPageSize());
             _fptr.write(page.getPageData(), 0, BufferPool.getPageSize());
         } catch (FileNotFoundException e) {
@@ -102,6 +102,7 @@ public class HeapFile implements DbFile {
      */
     public int numPages() {
         // some code goes here
+        _numPg = (int) (_file.length() / BufferPool.getPageSize());
         return _numPg;
     }
 
@@ -110,7 +111,28 @@ public class HeapFile implements DbFile {
             throws DbException, IOException, TransactionAbortedException {
         // some code goes here
         // not necessary for lab1
-        return null;
+        HeapPageId pid;
+        ArrayList<Page> dirtyPages = new ArrayList<Page>();
+        for (int pgNo = 0; pgNo < _numPg; ++pgNo) {
+            pid = new HeapPageId(getId(), pgNo);
+            HeapPage pg = (HeapPage) Database.getBufferPool().getPage(tid,
+                    pid, Permissions.READ_WRITE);
+            if (pg.getNumEmptySlots() > 0) {
+                pg.insertTuple(t);
+                dirtyPages.add(pg);
+            }
+        }
+        if (dirtyPages.size() == 0) {
+            pid = new HeapPageId(getId(), _numPg++);
+            HeapPage pg = new HeapPage(pid, HeapPage.createEmptyPageData());
+            writePage(pg);
+            pg = (HeapPage) Database.getBufferPool().getPage(tid,
+                    pid, Permissions.READ_WRITE);
+            assert pg.getNumEmptySlots() > 0;
+            pg.insertTuple(t);
+            dirtyPages.add(pg);
+        }
+        return dirtyPages;
     }
 
     // see DbFile.java for javadocs
@@ -118,7 +140,17 @@ public class HeapFile implements DbFile {
             TransactionAbortedException {
         // some code goes here
         // not necessary for lab1
-        return null;
+        RecordId recId = t.getRecordId();
+        if (recId == null)
+            throw new DbException("Try to delete a tuple with invalid reference");
+        HeapPageId pid = (HeapPageId) recId.getPageId();
+        if (pid.getTableId() != getId())
+            throw new DbException("Try to delete a tuple in another HeapFile");
+        HeapPage pg = (HeapPage) Database.getBufferPool().getPage(tid, pid, Permissions.READ_WRITE);
+        pg.deleteTuple(t);
+        ArrayList<Page> dirtyPages = new ArrayList<Page>();
+        dirtyPages.add(pg);
+        return dirtyPages;
     }
 
     // see DbFile.java for javadocs
@@ -156,7 +188,7 @@ public class HeapFile implements DbFile {
             public boolean hasNext() throws DbException, TransactionAbortedException {
                 if (_curPgItr == null)
                     return false;
-                if (!_curPgItr.hasNext() && _nxtPgNo < _numPg)
+                while (!_curPgItr.hasNext() && _nxtPgNo < _numPg)
                     redirPgItr();
                 return _curPgItr.hasNext();
             }

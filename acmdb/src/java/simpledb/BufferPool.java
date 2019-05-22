@@ -168,7 +168,7 @@ public class BufferPool {
         throws DbException, IOException, TransactionAbortedException {
         // some code goes here
         // not necessary for lab1
-        BTreeFile f = (BTreeFile) Database.getCatalog().getDatabaseFile(tableId);
+        DbFile f =  Database.getCatalog().getDatabaseFile(tableId);
         ArrayList<Page> dirtyPgList = f.insertTuple(tid, t);
 
         trimCache(tid, dirtyPgList);
@@ -192,7 +192,7 @@ public class BufferPool {
         // some code goes here
         // not necessary for lab1
         int tableId = t.getRecordId().getPageId().getTableId();
-        BTreeFile f = (BTreeFile) Database.getCatalog().getDatabaseFile(tableId);
+        DbFile f = Database.getCatalog().getDatabaseFile(tableId);
         ArrayList<Page> dirtyPgList = f.deleteTuple(tid, t);
 
         trimCache(tid, dirtyPgList);
@@ -207,6 +207,7 @@ public class BufferPool {
                 evictPage();
             curPg = pgItr.next();
             _pidMappedPage.put(curPg.getId(), curPg);
+//            int echoSize = _pidMappedPage.size();
             curPg.markDirty(true, tid);
         }
     }
