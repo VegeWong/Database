@@ -4,6 +4,13 @@ package simpledb;
  */
 public class IntHistogram {
 
+    private int numBucket;
+    private int minVal;
+    private int maxVal;
+
+    private int width;
+    private double[] heights;
+    private int totalNum;
     /**
      * Create a new IntHistogram.
      * 
@@ -22,6 +29,29 @@ public class IntHistogram {
      */
     public IntHistogram(int buckets, int min, int max) {
     	// some code goes here
+        this.minVal = min;
+        this.maxVal = max;
+        if (buckets > max - min + 1)
+            this.numBucket = max - min + 1;
+        else
+            this.numBucket = buckets;
+        this.width = (int) Math.ceil((double) (max - min + 1) / numBucket);
+        this.heights = new double[numBucket];
+        this.totalNum = 0;
+    }
+
+    private int getBucketIndex(int t) {
+        int index = (int) ((t - this.minVal) / this.width);
+        if (index == numBucket)
+            --index;
+        return index;
+    }
+
+    private int getBucketWidth(int ind) {
+        if (ind + 1 == numBucket)
+            return maxVal - minVal + 1 - width * ind;
+        else
+            return width;
     }
 
     /**
@@ -30,6 +60,9 @@ public class IntHistogram {
      */
     public void addValue(int v) {
     	// some code goes here
+        int index = getBucketIndex(v);
+        this.heights[index] += 1;
+        this.totalNum += 1;
     }
 
     /**
@@ -43,9 +76,50 @@ public class IntHistogram {
      * @return Predicted selectivity of this particular operator and value
      */
     public double estimateSelectivity(Predicate.Op op, int v) {
-
     	// some code goes here
-        return -1.0;
+        int index = getBucketIndex(v);
+        int wid = getBucketWidth(index);
+
+
+        int add = 0;
+        switch (op) {
+            case EQUALS: {
+                if (index < 0 || index >= numBucket)
+                    return 0;
+                return heights[index] / (wid * totalNum);
+            }
+            case LESS_THAN_OR_EQ: add = 1;
+            case LESS_THAN: {
+                if (index < 0)
+                    return 0;
+                else if (index >= numBucket)
+                    return 1;
+
+                double inBucket = (v - index * width + add) * heights[index] / wid;
+                double outBucket = 0;
+                for (int i = 0; i < index; ++i)
+                    outBucket += heights[i];
+                return (inBucket + outBucket) / totalNum;
+            }
+            case GREATER_THAN_OR_EQ: add = 1;
+            case GREATER_THAN: {
+                if (index < 0)
+                    return 1;
+                else if (index >= numBucket)
+                    return 0;
+
+                int inBucketCnt = index == numBucket - 1 ? maxVal - v :
+                        (index + 1) * width - v;
+                inBucketCnt += add;
+                double inBucket = inBucketCnt * heights[index] / wid;
+                double outBucket = 0;
+                for (int i = index + 1; i < numBucket; ++i)
+                    outBucket += heights[i];
+                return (inBucket + outBucket) / totalNum;
+            }
+            case NOT_EQUALS: return 1 - heights[index] / (wid * totalNum);
+        }
+        return 0;
     }
     
     /**
@@ -67,6 +141,9 @@ public class IntHistogram {
      */
     public String toString() {
         // some code goes here
-        return null;
+        return "IntHistogram:" +
+                "buckets="+String.valueOf(numBucket) +
+                "min="+String.valueOf(minVal) +
+                "max="+String.valueOf(maxVal);
     }
 }
