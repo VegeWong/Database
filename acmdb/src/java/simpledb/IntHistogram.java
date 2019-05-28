@@ -42,8 +42,9 @@ public class IntHistogram {
 
     private int getBucketIndex(int t) {
         int index = (int) ((t - this.minVal) / this.width);
-        if (index == numBucket)
+        if (index == numBucket && t <= maxVal) {
             --index;
+        }
         return index;
     }
 
@@ -117,7 +118,11 @@ public class IntHistogram {
                     outBucket += heights[i];
                 return (inBucket + outBucket) / totalNum;
             }
-            case NOT_EQUALS: return 1 - heights[index] / (wid * totalNum);
+            case NOT_EQUALS: {
+                if (index < 0 || index >= numBucket)
+                    return 1;
+                return 1 - heights[index] / (wid * totalNum);
+            }
         }
         return 0;
     }
