@@ -8,7 +8,6 @@ import java.util.*;
 public class Join extends Operator {
 
     private static final long serialVersionUID = 1L;
-    private static final int BLOCK_SIZE = 100000;
 
     private JoinPredicate p;
     private DbIterator outer;
@@ -78,37 +77,26 @@ public class Join extends Operator {
             TransactionAbortedException {
         int len1 = outer.getTupleDesc().numFields();
         int len2 = inner.getTupleDesc().numFields();
-        Tuple[] cacheOfOuterTable = new Tuple[BLOCK_SIZE];
         outer.rewind();
         int cnt = 0;
         Tuple in, out;
-        while (true) {
-            while (cnt < BLOCK_SIZE && outer.hasNext())
-                cacheOfOuterTable[cnt++] = outer.next();
-
-            if (cnt == 0) {
-                filteredTupItr = new TupleIterator(td, filteredTuples);
-                return;
-            }
-
-            for (int i = 0; i < cnt; ++i) {
-                out = cacheOfOuterTable[i];
-                inner.rewind();
-                while (inner.hasNext()) {
-                    in = inner.next();
-                    if (p.filter(out, in)) {
-                        Tuple tp = new Tuple(td);
-                        int ind, now;
-                        for (ind = 0, now = 0; now < len1; ++ind, ++now)
-                            tp.setField(ind, out.getField(now));
-                        for (now = 0; now < len2; ++now, ++ind)
-                            tp.setField(ind, in.getField(now));
-                        filteredTuples.add(tp);
-                    }
+        while (outer.hasNext()) {
+            out = outer.next();
+            inner.rewind();
+            while (inner.hasNext()) {
+                in = inner.next();
+                if (p.filter(out, in)) {
+                    Tuple tp = new Tuple(td);
+                    int ind, now;
+                    for (ind = 0, now = 0; now < len1; ++ind, ++now)
+                        tp.setField(ind, out.getField(now));
+                    for (now = 0; now < len2; ++now, ++ind)
+                        tp.setField(ind, in.getField(now));
+                    filteredTuples.add(tp);
                 }
             }
-            cnt = 0;
         }
+        filteredTupItr = new TupleIterator(td, filteredTuples);
     }
 
     public void open() throws DbException, NoSuchElementException,

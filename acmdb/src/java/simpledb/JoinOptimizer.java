@@ -1,9 +1,9 @@
 package simpledb;
 
-import java.util.*;
-
 import javax.swing.*;
-import javax.swing.tree.*;
+import javax.swing.tree.DefaultMutableTreeNode;
+import javax.swing.tree.DefaultTreeCellRenderer;
+import java.util.*;
 
 /**
  * The JoinOptimizer class is responsible for ordering a series of joins
@@ -111,7 +111,30 @@ public class JoinOptimizer {
             // HINT: You may need to use the variable "j" if you implemented
             // a join algorithm that's more complicated than a basic
             // nested-loops join.
-            return -1.0;
+            int tableId1 = Database.getCatalog().getTableId(j.t1Alias);
+            int tableId2 = Database.getCatalog().getTableId(j.t2Alias);
+            DbFile f1 = Database.getCatalog().getDatabaseFile(tableId1);
+            DbFile f2 = Database.getCatalog().getDatabaseFile(tableId2);
+            TupleDesc td1 = f1.getTupleDesc();
+            TupleDesc td2 = f2.getTupleDesc();
+            boolean t1pkey = (Database.getCatalog().getPrimaryKey(tableId1).contentEquals(j.f1PureName));
+            boolean t2pkey = (Database.getCatalog().getPrimaryKey(tableId2).contentEquals(j.f2PureName));
+
+            double regularizedCost = 0;
+            if (j.p == Predicate.Op.EQUALS) {
+                if (t1pkey && t2pkey)
+                    regularizedCost = Math.min(card1, card2);
+                else if (t1pkey || t2pkey)
+                    regularizedCost = t1pkey ? card2 : card1;
+                else
+                    regularizedCost = Math.max(card1, card2);
+            }
+            else if (j.p == Predicate.Op.NOT_EQUALS)
+                regularizedCost = (int) (0.7 * card1 * card2);
+            else
+                regularizedCost = (int) (0.3 * card1 * card2);
+
+            return card1 * card2 + cost1 + cost2 + regularizedCost;
         }
     }
 
@@ -157,7 +180,18 @@ public class JoinOptimizer {
             Map<String, Integer> tableAliasToId) {
         int card = 1;
         // some code goes here
-        return card <= 0 ? 1 : card;
+        if (joinOp == Predicate.Op.EQUALS) {
+            if (t1pkey && t2pkey)
+                return Math.min(card1, card2);
+            else if (t1pkey || t2pkey)
+                return t1pkey ? card2 : card1;
+            else
+                return Math.max(card1, card2);
+        }
+        else if (joinOp == Predicate.Op.NOT_EQUALS)
+            return (int) (0.7 * card1 * card2);
+        else
+            return (int) (0.3 * card1 * card2);
     }
 
     /**
@@ -221,7 +255,23 @@ public class JoinOptimizer {
 
         // some code goes here
         //Replace the following
-        return joins;
+        PlanCache pc = new PlanCache();
+        for (int i = 1; i <= joins.size(); ++i) {
+            Set<Set<LogicalJoinNode>> sets = enumerateSubsets(joins, i);
+            for (Set<LogicalJoinNode> set : sets) {
+                CostCard bestPlan = new CostCard();
+                bestPlan.cost = Double.MAX_VALUE;
+                for (LogicalJoinNode removedNode : set) {
+                    CostCard cc = computeCostAndCardOfSubplan(stats, filterSelectivities,
+                            removedNode, set, bestPlan.cost, pc);
+                    if (cc != null)
+                        bestPlan = cc;
+                }
+                if (bestPlan.cost != Double.MAX_VALUE)
+                    pc.addPlan(set, bestPlan.cost, bestPlan.card, bestPlan.plan);
+            }
+        }
+        return pc.getOrder(new HashSet<LogicalJoinNode>(joins));
     }
 
     // ===================== Private Methods =================================
@@ -301,7 +351,8 @@ public class JoinOptimizer {
                             filterSelectivities.get(j.t2Alias));
             rightPkey = table2Alias == null ? false : isPkey(table2Alias,
                     j.f2PureName);
-        } else {
+        }
+        else {
             // news is not empty -- figure best way to join j to news
             prevBest = pc.getOrder(news);
 

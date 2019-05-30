@@ -96,7 +96,7 @@ public class IntHistogram {
                 else if (index >= numBucket)
                     return 1;
 
-                double inBucket = (v - index * width + add) * heights[index] / wid;
+                double inBucket = (v - minVal - index * width + add) * heights[index] / wid;
                 double outBucket = 0;
                 for (int i = 0; i < index; ++i)
                     outBucket += heights[i];
@@ -110,7 +110,7 @@ public class IntHistogram {
                     return 0;
 
                 int inBucketCnt = index == numBucket - 1 ? maxVal - v :
-                        (index + 1) * width - v;
+                        minVal + (index + 1) * width - v - 1;
                 inBucketCnt += add;
                 double inBucket = inBucketCnt * heights[index] / wid;
                 double outBucket = 0;
