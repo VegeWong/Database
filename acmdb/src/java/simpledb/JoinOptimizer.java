@@ -120,21 +120,21 @@ public class JoinOptimizer {
             boolean t1pkey = (Database.getCatalog().getPrimaryKey(tableId1).contentEquals(j.f1PureName));
             boolean t2pkey = (Database.getCatalog().getPrimaryKey(tableId2).contentEquals(j.f2PureName));
 
-            double regularizedCost = 0;
+            double predicateSpecifiedPenalty = 0;
             if (j.p == Predicate.Op.EQUALS) {
                 if (t1pkey && t2pkey)
-                    regularizedCost = Math.min(card1, card2);
+                    predicateSpecifiedPenalty = Math.min(card1, card2);
                 else if (t1pkey || t2pkey)
-                    regularizedCost = t1pkey ? card2 : card1;
+                    predicateSpecifiedPenalty = t1pkey ? card2 : card1;
                 else
-                    regularizedCost = Math.max(card1, card2);
+                    predicateSpecifiedPenalty = Math.max(card1, card2);
             }
             else if (j.p == Predicate.Op.NOT_EQUALS)
-                regularizedCost = (int) (0.7 * card1 * card2);
+                predicateSpecifiedPenalty = (int) (0.7 * card1 * card2);
             else
-                regularizedCost = (int) (0.3 * card1 * card2);
+                predicateSpecifiedPenalty = (int) (0.3 * card1 * card2);
 
-            return card1 * card2 + cost1 + cost2 + regularizedCost;
+            return card1 * card2 + cost1 + cost2 * card1 + predicateSpecifiedPenalty;
         }
     }
 
@@ -271,7 +271,10 @@ public class JoinOptimizer {
                     pc.addPlan(set, bestPlan.cost, bestPlan.card, bestPlan.plan);
             }
         }
-        return pc.getOrder(new HashSet<LogicalJoinNode>(joins));
+        Vector<LogicalJoinNode> optimalPlan = pc.getOrder(new HashSet<LogicalJoinNode>(joins));
+        if (explain)
+            printJoins(optimalPlan, pc, stats, filterSelectivities);
+        return optimalPlan;
     }
 
     // ===================== Private Methods =================================
