@@ -66,6 +66,7 @@ public class OrderBy extends Operator {
 
     public void close() {
         super.close();
+        child.close();
         it = null;
     }
 

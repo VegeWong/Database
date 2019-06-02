@@ -517,9 +517,12 @@ public class Parser {
                             + curtrans.getId().getId());
                 }
                 try {
-                    if (s instanceof ZInsert)
+//                    System.out.println("==== DEBUG-INFO: Step into try block ====");
+                    if (s instanceof ZInsert) {
+//                        System.out.println("==== DEBUG-INFO: Handle Insert ====");
                         query = handleInsertStatement((ZInsert) s,
                                 curtrans.getId());
+                    }
                     else if (s instanceof ZDelete)
                         query = handleDeleteStatement((ZDelete) s,
                                 curtrans.getId());
@@ -532,9 +535,10 @@ public class Parser {
                                         + s
                                         + "\n -- parser only handles SQL transactions, insert, delete, and select statements");
                     }
+//                    System.out.println("==== DEBUG-INFO: query exec ====");
                     if (query != null)
                         query.execute();
-
+//                    System.out.println("==== DEBUG-INFO: query ends ====");
                     if (!inUserTrans && curtrans != null) {
                         curtrans.commit();
                         System.out.println("Transaction "
@@ -549,12 +553,13 @@ public class Parser {
                                 + " aborted because of unhandled error");
                     }
                     this.inUserTrans = false;
-
                     if (a instanceof simpledb.ParsingException
                             || a instanceof Zql.ParseException)
                         throw new ParsingException((Exception) a);
                     if (a instanceof Zql.TokenMgrError)
                         throw (Zql.TokenMgrError) a;
+//                    System.out.println("==== DEBUG-INFO: Unhandle Error ====");
+//                    a.printStackTrace();
                     throw new DbException(a.getMessage());
                 } finally {
                     if (!inUserTrans)

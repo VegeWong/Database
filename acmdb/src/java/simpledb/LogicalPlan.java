@@ -345,9 +345,9 @@ public class LogicalPlan {
         }
         
         JoinOptimizer jo = new JoinOptimizer(this,joins);
-
+//        System.out.println("==== DEBUG-INFO: orderJoins ====");
         joins = jo.orderJoins(statsMap,filterSelectivities,explain);
-
+//        System.out.println("==== DEBUG-INFO: " + String.valueOf(joins == null));
         Iterator<LogicalJoinNode> joinIt = joins.iterator();
         while (joinIt.hasNext()) {
             LogicalJoinNode lj = joinIt.next();
@@ -475,6 +475,7 @@ public class LogicalPlan {
         }
 
         if (hasOrderBy) {
+//            System.out.println("==== DEBUG-INFO: "+node.getTupleDesc().toString() + "\noByField:" + oByField + " ====");
             node = new OrderBy(node.getTupleDesc().fieldNameToIndex(oByField), oByAsc, node);
         }
 

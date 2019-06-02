@@ -22,7 +22,7 @@ public class Aggregate extends Operator {
      * Constructor.
      * 
      * Implementation hint: depending on the type of afield, you will want to
-     * construct an {@link IntAggregator} or {@link StringAggregator} to help
+     * construct an {@link IntegerAggregator} or {@link StringAggregator} to help
      * you with your implementation of readNext().
      * 
      * 
@@ -162,15 +162,15 @@ public class Aggregate extends Operator {
         if (gfield < 0) {
             typeArr = new Type[] {td.getFieldType(afield)};
             nameArr = new String[] {
-                    "aggName("+nameOfAggregatorOp(op)+") ("+td.getFieldName(afield)+")"
+                    nameOfAggregatorOp(op)+"("+td.getFieldName(afield)+")"
             };
         }
         else {
             typeArr = new Type[] {td.getFieldType(gfield),
                     td.getFieldType(afield)};
             nameArr = new String[] {
-                    "groupbyFieldName("+td.getFieldName(gfield)+")",
-                    "aggName("+nameOfAggregatorOp(op)+") ("+td.getFieldName(afield)+")"
+                    groupFieldName(),
+                    nameOfAggregatorOp(op)+" ("+td.getFieldName(afield)+")"
             };
         }
         resTd = new TupleDesc(typeArr, nameArr);
@@ -180,6 +180,7 @@ public class Aggregate extends Operator {
     public void close() {
 	    // some code goes here
         child.close();
+        super.close();
         itr.close();
     }
 

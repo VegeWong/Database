@@ -111,22 +111,9 @@ public class JoinOptimizer {
             // HINT: You may need to use the variable "j" if you implemented
             // a join algorithm that's more complicated than a basic
             // nested-loops join.
-            int tableId1 = Database.getCatalog().getTableId(j.t1Alias);
-            int tableId2 = Database.getCatalog().getTableId(j.t2Alias);
-            DbFile f1 = Database.getCatalog().getDatabaseFile(tableId1);
-            DbFile f2 = Database.getCatalog().getDatabaseFile(tableId2);
-            TupleDesc td1 = f1.getTupleDesc();
-            TupleDesc td2 = f2.getTupleDesc();
-            boolean t1pkey = (Database.getCatalog().getPrimaryKey(tableId1).contentEquals(j.f1PureName));
-            boolean t2pkey = (Database.getCatalog().getPrimaryKey(tableId2).contentEquals(j.f2PureName));
 
             double predicateSpecifiedPenalty = 0;
             if (j.p == Predicate.Op.EQUALS) {
-                if (t1pkey && t2pkey)
-                    predicateSpecifiedPenalty = Math.min(card1, card2);
-                else if (t1pkey || t2pkey)
-                    predicateSpecifiedPenalty = t1pkey ? card2 : card1;
-                else
                     predicateSpecifiedPenalty = Math.max(card1, card2);
             }
             else if (j.p == Predicate.Op.NOT_EQUALS)
@@ -274,6 +261,8 @@ public class JoinOptimizer {
         Vector<LogicalJoinNode> optimalPlan = pc.getOrder(new HashSet<LogicalJoinNode>(joins));
         if (explain)
             printJoins(optimalPlan, pc, stats, filterSelectivities);
+        if (joins.size() == 0)
+            return joins;
         return optimalPlan;
     }
 

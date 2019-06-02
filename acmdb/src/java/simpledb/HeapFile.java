@@ -76,6 +76,7 @@ public class HeapFile implements DbFile {
             RandomAccessFile _fptr = new RandomAccessFile(_file, "r");
             _fptr.seek(pid.pageNumber() * BufferPool.getPageSize());
             _fptr.read(_retrievedPage, 0, BufferPool.getPageSize());
+            _fptr.close();
             return new HeapPage((HeapPageId) pid, _retrievedPage);
         } catch (FileNotFoundException e) {
             throw new IllegalArgumentException();

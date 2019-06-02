@@ -120,6 +120,7 @@ public class TableStats {
                         ((StringHistogram) histograms[fi]).addValue(((StringField) tp.getField(fi)).getValue());
                 }
             }
+            scan.close();
         } catch (DbException e) {
             System.out.println(e.getMessage());
         } catch (TransactionAbortedException e) {

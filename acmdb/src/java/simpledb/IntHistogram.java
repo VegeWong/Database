@@ -123,6 +123,9 @@ public class IntHistogram {
                     return 1;
                 return 1 - heights[index] / (wid * totalNum);
             }
+            case LIKE: {
+
+            }
         }
         return 0;
     }

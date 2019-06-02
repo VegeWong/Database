@@ -117,8 +117,8 @@ public class HashEquiJoin extends Operator {
         child2.close();
         child1.close();
         super.close();
+        filteredTupItr.close();
         filteredTuples.clear();
-        filteredTupItr = null;
     }
 
     public void rewind() throws DbException, TransactionAbortedException {
@@ -171,7 +171,6 @@ public class HashEquiJoin extends Operator {
         child1 = children[0];
         child2 = children[1];
         filteredTuples.clear();
-        filteredTupItr = null;
     }
     
 }

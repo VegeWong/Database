@@ -15,7 +15,7 @@ public class Join extends Operator {
     private TupleDesc td;
     private List<Tuple> filteredTuples;
     private TupleIterator filteredTupItr;
-
+    private HashEquiJoin hashJoin;
     /**
      * Constructor. Accepts to children to join and the predicate to join them
      * on
@@ -32,8 +32,14 @@ public class Join extends Operator {
         this.p = p;
         outer = child1;
         inner = child2;
-        filteredTuples = new LinkedList<Tuple>();
         filteredTupItr = null;
+
+        if (p.op == Predicate.Op.EQUALS)
+            hashJoin = new HashEquiJoin(p, child1, child2);
+        else {
+            hashJoin = null;
+            filteredTuples = new LinkedList<Tuple>();
+        }
     }
 
     public JoinPredicate getJoinPredicate() {
@@ -103,30 +109,42 @@ public class Join extends Operator {
             TransactionAbortedException {
         // some code goes here
         super.open();
-        outer.open();
-        inner.open();
+        if (hashJoin != null)
+            hashJoin.open();
+        else {
+            outer.open();
+            inner.open();
 
-        TupleDesc td1 = outer.getTupleDesc();
-        TupleDesc td2 = inner.getTupleDesc();
-        td = TupleDesc.merge(td1, td2);
-        nestedLoopJoin();
-        filteredTupItr.open();
+            TupleDesc td1 = outer.getTupleDesc();
+            TupleDesc td2 = inner.getTupleDesc();
+            td = TupleDesc.merge(td1, td2);
+            nestedLoopJoin();
+            filteredTupItr.open();
+        }
     }
 
     public void close() {
         // some code goes here
-        inner.close();
-        outer.close();
         super.close();
-        filteredTuples.clear();
-        filteredTupItr = null;
+        if (hashJoin != null)
+            hashJoin.close();
+        else {
+            inner.close();
+            outer.close();
+            filteredTupItr.close();
+            filteredTuples.clear();
+        }
     }
 
     public void rewind() throws DbException, TransactionAbortedException {
         // some code goes here
-        inner.rewind();
-        outer.rewind();
-        filteredTupItr.rewind();
+        if (hashJoin != null)
+            hashJoin.rewind();
+        else {
+            inner.rewind();
+            outer.rewind();
+            filteredTupItr.rewind();
+        }
     }
 
     /**
@@ -149,6 +167,8 @@ public class Join extends Operator {
      */
     protected Tuple fetchNext() throws TransactionAbortedException, DbException {
         // some code goes here
+        if (hashJoin != null)
+            return hashJoin.fetchNext();
         if (filteredTupItr.hasNext())
             return filteredTupItr.next();
         else
@@ -169,8 +189,11 @@ public class Join extends Operator {
         // some code goes here
         outer = children[0];
         inner = children[1];
-        filteredTuples.clear();
-        filteredTupItr = null;
+        if (hashJoin != null) {
+            hashJoin.setChildren(children);
+        }
+        else
+            filteredTuples.clear();
     }
 
 }
