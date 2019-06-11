@@ -117,11 +117,14 @@ public class HeapFile implements DbFile {
         for (int pgNo = 0; pgNo < _numPg; ++pgNo) {
             pid = new HeapPageId(getId(), pgNo);
             HeapPage pg = (HeapPage) Database.getBufferPool().getPage(tid,
-                    pid, Permissions.READ_WRITE);
+                    pid, Permissions.READ_ONLY);
             if (pg.getNumEmptySlots() > 0) {
+                pg = (HeapPage) Database.getBufferPool().getPage(tid,
+                        pid, Permissions.READ_WRITE);
                 pg.insertTuple(t);
                 dirtyPages.add(pg);
             }
+            else Database.getBufferPool().releasePage(tid, pid);
         }
         if (dirtyPages.size() == 0) {
             pid = new HeapPageId(getId(), _numPg++);
@@ -162,14 +165,14 @@ public class HeapFile implements DbFile {
             private int _curPgNo;
             private int _nxtPgNo;
             private int _tableId;
-            private Permissions _per = Permissions.READ_WRITE;
+            private Permissions _per = Permissions.READ_ONLY;
 
             private Iterator<Tuple> _curPgItr = null;
 
             private void redirPgItr() throws DbException, TransactionAbortedException {
                 try {
-                    if (_curPgItr != null)
-                        Database.getBufferPool().releasePage(tid, new HeapPageId(_tableId, _curPgNo));
+//                    if (_curPgItr != null)
+//                        Database.getBufferPool().releaseReadPage(tid, new HeapPageId(_tableId, _curPgNo));
                     _curPgNo = _nxtPgNo;
                     _curPgItr = ((HeapPage) Database.getBufferPool().getPage(tid, new HeapPageId(_tableId, _nxtPgNo++), _per)).iterator();
                 } catch (DbException e) {
@@ -208,7 +211,7 @@ public class HeapFile implements DbFile {
 
             @Override
             public void close() {
-                Database.getBufferPool().releasePage(tid, new HeapPageId(_tableId, _curPgNo));
+//                Database.getBufferPool().releaseReadPage(tid, new HeapPageId(_tableId, _curPgNo));
                 _curPgItr = null;
             }
         }

@@ -33,7 +33,7 @@ public class SeqScan implements DbIterator {
      */
     public SeqScan(TransactionId tid, int tableid, String tableAlias) {
         // some code goes here
-        _file =Database.getCatalog().getDatabaseFile(tableid);
+        _file = Database.getCatalog().getDatabaseFile(tableid);
         _fitr = _file.iterator(tid);
         if (tableAlias == null)
             _alias = "null";

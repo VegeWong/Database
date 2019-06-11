@@ -3,6 +3,7 @@ package simpledb;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReadWriteLock;
 
 /**
  * BufferPool manages the reading and writing of pages into memory from
@@ -22,8 +23,9 @@ public class BufferPool {
     private static int pageSize = PAGE_SIZE;
 
     private int _maxPageNum;
-    private ConcurrentHashMap<PageId, Page> _pidMappedPage;
-    private ConcurrentHashMap<Integer, LinkedList<PageId>> _cachedTable;
+    private Map<PageId, Page> _pidMappedPage;
+    private Set<PageId> cleanPages;
+    private Map<TransactionId, Set<PageId>> _dirtiedLists;
     private LockManager lockManager;
 
     /** Default number of pages passed to the constructor. This is used by
@@ -40,7 +42,8 @@ public class BufferPool {
         // some code goes here
         _maxPageNum = numPages;
         _pidMappedPage = new ConcurrentHashMap<PageId, Page>();
-        _cachedTable = new ConcurrentHashMap<Integer, LinkedList<PageId>>();
+        cleanPages = new HashSet<PageId>();
+        _dirtiedLists = new ConcurrentHashMap<TransactionId, Set<PageId>>();
         lockManager = new LockManager();
     }
 
@@ -78,9 +81,16 @@ public class BufferPool {
         // some code goes here
 
         // Check Lock
-//        LockManager.Locker locker = lockManager.getLocker(tid);
-//        if (!locker.lock(pid, perm))
-//            throw new TransactionAbortedException();
+        try {
+            lockManager.getLock(tid, pid, perm);
+        } catch (TransactionAbortedException e) {
+            try {
+                transactionComplete(tid, false);
+            } catch (IOException ioe) {
+                throw new DbException("Transcation Abortion failed");
+            }
+            throw e;
+        }
 
         Page _page = _pidMappedPage.get(pid);
         if (_page == null) try {
@@ -89,12 +99,12 @@ public class BufferPool {
             DbFile _file = Database.getCatalog().getDatabaseFile(pid.getTableId());
             _page = _file.readPage(pid);
             _pidMappedPage.put(pid, _page);
-            LinkedList<PageId> pids = _cachedTable.get(pid.getTableId());
-            if (pids == null) {
-                pids = new LinkedList<PageId>();
-                _cachedTable.put(pid.getTableId(), pids);
+            if (perm == Permissions.READ_ONLY)
+                cleanPages.add(pid);
+            else {
+                _dirtiedLists.putIfAbsent(tid, new HashSet<PageId>());
+                _dirtiedLists.get(tid).add(pid);
             }
-            pids.add(pid);
         } catch (NoSuchElementException e) {
             System.out.println(e.toString());
             throw new DbException("Get Dbfile failed");
@@ -112,10 +122,15 @@ public class BufferPool {
      * @param tid the ID of the transaction requesting the unlock
      * @param pid the ID of the page to unlock
      */
-    public  void releasePage(TransactionId tid, PageId pid) {
+    public void releasePage(TransactionId tid, PageId pid) {
         // some code goes here
         // not necessary for lab1|lab2
-        lockManager.getLocker(tid).release(pid);
+        lockManager.releaseLock(tid, pid, Permissions.READ_ONLY);
+        lockManager.releaseLock(tid, pid, Permissions.READ_WRITE);
+    }
+
+    public void releaseReadPage(TransactionId tid,PageId pid) {
+        lockManager.releaseLock(tid, pid, Permissions.READ_ONLY);
     }
 
     /**
@@ -126,14 +141,15 @@ public class BufferPool {
     public void transactionComplete(TransactionId tid) throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
-        lockManager.getLocker(tid).clear();
+        lockManager.releaseOccu(tid);
     }
 
     /** Return true if the specified transaction has a lock on the specified page */
     public boolean holdsLock(TransactionId tid, PageId p) {
         // some code goes here
         // not necessary for lab1|lab2
-        return lockManager.getLocker(tid).holdsLock(p);
+        return lockManager.holdsLock(tid, p, Permissions.READ_WRITE) ||
+                lockManager.holdsLock(tid, p, Permissions.READ_ONLY);
     }
 
     /**
@@ -147,6 +163,16 @@ public class BufferPool {
         throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
+        if (commit)
+            flushPages(tid);
+        else {
+            _dirtiedLists.putIfAbsent(tid, new HashSet<PageId>());
+            Set<PageId> tranDirties = _dirtiedLists.get(tid);
+            for (PageId disPid : tranDirties)
+                discardPage(disPid);
+        }
+        _dirtiedLists.remove(tid);
+        transactionComplete(tid);
     }
 
     /**
@@ -202,13 +228,18 @@ public class BufferPool {
         throws DbException {
         Page curPg;
         Iterator<Page> pgItr = dirtyPages.iterator();
+        _dirtiedLists.putIfAbsent(tid, new HashSet<PageId>());
+        Set<PageId> dirtyList = _dirtiedLists.get(tid);
+
         while (pgItr.hasNext()) {
             if (_pidMappedPage.size() == _maxPageNum)
                 evictPage();
             curPg = pgItr.next();
             _pidMappedPage.put(curPg.getId(), curPg);
+            cleanPages.remove(curPg.getId());
 //            int echoSize = _pidMappedPage.size();
             curPg.markDirty(true, tid);
+            dirtyList.add(curPg.getId());
         }
     }
 
@@ -226,8 +257,12 @@ public class BufferPool {
                 continue;
             DbFile f = Database.getCatalog().getDatabaseFile(pg.getId().getTableId());
             f.writePage(pg);
+            pg.setBeforeImage();
             pg.markDirty(false, null);
         }
+        cleanPages.clear();
+        cleanPages.addAll(_pidMappedPage.keySet());
+        _dirtiedLists.clear();
     }
 
     /** Remove the specific page id from the buffer pool.
@@ -242,6 +277,7 @@ public class BufferPool {
         // some code goes here
         // not necessary for lab1
         _pidMappedPage.remove(pid);
+        cleanPages.remove(pid);
     }
 
     /**
@@ -257,7 +293,10 @@ public class BufferPool {
             return;
         DbFile f = Database.getCatalog().getDatabaseFile(pg.getId().getTableId());
         f.writePage(pg);
+        _dirtiedLists.get(pg.isDirty()).remove(pid);
         pg.markDirty(false, null);
+        pg.setBeforeImage();
+        cleanPages.add(pid);
     }
 
     /** Write all pages of the specified transaction to disk.
@@ -265,6 +304,22 @@ public class BufferPool {
     public synchronized  void flushPages(TransactionId tid) throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
+//        lockManager.
+        _dirtiedLists.putIfAbsent(tid, new HashSet<PageId>());
+        Set<PageId> tranDirties = _dirtiedLists.get(tid);
+        Iterator<PageId> itr = tranDirties.iterator();
+        while (itr.hasNext()) {
+            PageId pid = itr.next();
+            Page pg = _pidMappedPage.get(pid);
+            if (pg == null || pg.isDirty() == null)
+                return;
+            DbFile f = Database.getCatalog().getDatabaseFile(pg.getId().getTableId());
+            f.writePage(pg);
+            pg.setBeforeImage();
+            itr.remove();
+            pg.markDirty(false, null);
+            cleanPages.add(pid);
+        }
     }
 
     /**
@@ -276,9 +331,9 @@ public class BufferPool {
         // not necessary for lab1
 
         Random rand = new Random();
-        PageId[] cachedKeys = _pidMappedPage.keySet().toArray(new PageId[0]);
-        PageId pid = cachedKeys[rand.nextInt(cachedKeys.length)];
-
+        if (cleanPages.size() == 0)
+            throw new DbException("No clean page for evict algorithm");
+        PageId pid = (PageId) ((Object[]) cleanPages.toArray())[rand.nextInt(cleanPages.size())];
         try {
             flushPage(pid);
             _pidMappedPage.remove(pid);
@@ -287,8 +342,4 @@ public class BufferPool {
         }
     }
 
-    public LinkedList<PageId> getCachedPagesOfTable(int tableId) {
-//        return _cachedTable.get(tableId);
-        return null;
-    }
 }

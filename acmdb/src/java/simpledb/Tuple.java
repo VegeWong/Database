@@ -103,7 +103,7 @@ public class Tuple implements Serializable {
     public String toString() {
         // some code goes here
         // modified: 2019.4.18
-        if (_fieldAr.length == 0)
+        if (_fieldAr == null || _fieldAr.length == 0)
             return "";
         StringBuffer sbuffer = new StringBuffer(_fieldAr[0].toString());
         for (int i = 1; i < _fieldAr.length; ++i) {
