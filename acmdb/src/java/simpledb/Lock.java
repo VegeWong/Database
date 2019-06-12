@@ -21,6 +21,7 @@ public class Lock {
 
     public boolean releaseSlock() {
         synchronized (this) {
+//            System.err.println(Thread.currentThread().toString() + "release shared lock");
             if (slock == 0)
                 return false;
             slock -= 1;

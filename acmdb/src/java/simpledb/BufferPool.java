@@ -81,17 +81,10 @@ public class BufferPool {
         // some code goes here
 
         // Check Lock
-        try {
-            lockManager.getLock(tid, pid, perm);
-        } catch (TransactionAbortedException e) {
-            try {
-                transactionComplete(tid, false);
-            } catch (IOException ioe) {
-                throw new DbException("Transcation Abortion failed");
-            }
-            throw e;
-        }
-
+//        System.err.println(Thread.currentThread().getName() + " " + perm.toString());
+        lockManager.getLock(tid, pid, perm);
+//        if (perm == Permissions.READ_WRITE)
+//            System.err.println(Thread.currentThread().getName() + " get X lock");
         Page _page = _pidMappedPage.get(pid);
         if (_page == null) try {
             if (_pidMappedPage.size() == _maxPageNum)
@@ -337,6 +330,7 @@ public class BufferPool {
         try {
             flushPage(pid);
             _pidMappedPage.remove(pid);
+            cleanPages.remove(pid);
         } catch (IOException e) {
             throw new DbException("Writing Failed: Can not write file on disk");
         }

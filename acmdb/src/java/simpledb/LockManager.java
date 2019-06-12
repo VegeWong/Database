@@ -64,12 +64,14 @@ public class LockManager {
         blocks = new ConcurrentHashMap<TransactionId, PageId>();
     }
 
-    private void signInWait(TransactionId tid, PageId pid,
+    private synchronized void signInWait(TransactionId tid, PageId pid,
                             Permissions per, Thread t)
             throws TransactionAbortedException {
-        if (hasDeadlock(tid, pid))
-            throw new TransactionAbortedException();
-        blocks.putIfAbsent(tid, pid);
+        synchronized (blocks) {
+            if (hasDeadlock(tid, pid))
+                throw new TransactionAbortedException();
+            blocks.putIfAbsent(tid, pid);
+        }
         waitQueues.putIfAbsent(pid, new LinkedList<OrderedLock>());
         List<OrderedLock> queue = waitQueues.get(pid);
         synchronized (queue) {
@@ -100,7 +102,9 @@ public class LockManager {
                 return;
             o = queue.remove(0);
         }
-        blocks.remove(o.tid);
+        synchronized (blocks) {
+            blocks.remove(o.tid);
+        }
         LockSupport.unpark(o.t);
     }
 
@@ -138,9 +142,9 @@ public class LockManager {
         locks.putIfAbsent(pid, new Lock());
         Lock lock = locks.get(pid);
         if (!lock.getSlock()) {
-            Thread t = Thread.currentThread();
-            signInWait(tid, pid, READ_ONLY, t);
             while (true) {
+                Thread t = Thread.currentThread();
+                signInWait(tid, pid, READ_ONLY, t);
                 LockSupport.park();
                 if (lock.getSlock())
                     break;
@@ -178,10 +182,10 @@ public class LockManager {
 
 
         if (!lock.getXlock()) {
-            Thread t = Thread.currentThread();
-            signInWait(tid, pid, READ_WRITE, t);
             while (true) {
-                LockSupport.park();
+                Thread t = Thread.currentThread();
+                signInWait(tid, pid, READ_WRITE, t);
+//                LockSupport.park();
                 synchronized (occu) {
                     if (occu.contains(lsr) && lock.upgradeLock()) {
                         occu.remove(lsr);
@@ -238,6 +242,7 @@ public class LockManager {
             while (itr.hasNext()) {
                 LockStatus ls = itr.next();
                 itr.remove();
+
                 lockRegister.putIfAbsent(ls.pid, new HashSet<TransactionId>());
                 Set<TransactionId> holders = lockRegister.get(ls.pid);
                 synchronized (holders) {
@@ -253,15 +258,17 @@ public class LockManager {
         }
     }
 
-    public boolean hasDeadlock(TransactionId tid, PageId pid) {
+    public synchronized boolean hasDeadlock(TransactionId tid, PageId pid) {
         Set<TransactionId> holders;
         Stack<TransactionId> stack = new Stack<TransactionId>();
         Set<TransactionId> visit = new HashSet<TransactionId>();
 
         holders = lockRegister.get(pid);
         synchronized (holders) {
-            if (holders != null)
-                stack.addAll(holders);
+            for (TransactionId mt : holders) {
+                if (!mt.equals(tid))
+                    stack.add(mt);
+            }
         }
         while (!stack.empty()) {
             TransactionId nowt = stack.peek();
@@ -279,8 +286,10 @@ public class LockManager {
                 Iterator<TransactionId> itr = holders.iterator();
                 while (itr.hasNext()) {
                     TransactionId nxtt = itr.next();
-                    if (visit.contains(nxtt))
+                    if (visit.contains(nxtt)) {
+//                        System.err.println(Thread.currentThread().toString() + " aborted, "+ tid.toString() + ":" + visit.toString());
                         return true;
+                    }
                     else
                         stack.add(nxtt);
                 }
