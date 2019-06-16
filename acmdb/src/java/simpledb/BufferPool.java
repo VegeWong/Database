@@ -24,8 +24,6 @@ public class BufferPool {
 
     private int _maxPageNum;
     private Map<PageId, Page> _pidMappedPage;
-    private Set<PageId> cleanPages;
-    private Map<TransactionId, Set<PageId>> _dirtiedLists;
     private LockManager lockManager;
 
     /** Default number of pages passed to the constructor. This is used by
@@ -42,8 +40,6 @@ public class BufferPool {
         // some code goes here
         _maxPageNum = numPages;
         _pidMappedPage = new ConcurrentHashMap<PageId, Page>();
-        cleanPages = new HashSet<PageId>();
-        _dirtiedLists = new ConcurrentHashMap<TransactionId, Set<PageId>>();
         lockManager = new LockManager();
     }
 
@@ -80,11 +76,7 @@ public class BufferPool {
         throws TransactionAbortedException, DbException {
         // some code goes here
 
-        // Check Lock
-//        System.err.println(Thread.currentThread().getName() + " " + perm.toString());
         lockManager.getLock(tid, pid, perm);
-//        if (perm == Permissions.READ_WRITE)
-//            System.err.println(Thread.currentThread().getName() + " get X lock");
         Page _page = _pidMappedPage.get(pid);
         if (_page == null) try {
             if (_pidMappedPage.size() == _maxPageNum)
@@ -92,12 +84,6 @@ public class BufferPool {
             DbFile _file = Database.getCatalog().getDatabaseFile(pid.getTableId());
             _page = _file.readPage(pid);
             _pidMappedPage.put(pid, _page);
-            if (perm == Permissions.READ_ONLY)
-                cleanPages.add(pid);
-            else {
-                _dirtiedLists.putIfAbsent(tid, new HashSet<PageId>());
-                _dirtiedLists.get(tid).add(pid);
-            }
         } catch (NoSuchElementException e) {
             System.out.println(e.toString());
             throw new DbException("Get Dbfile failed");
@@ -118,12 +104,7 @@ public class BufferPool {
     public void releasePage(TransactionId tid, PageId pid) {
         // some code goes here
         // not necessary for lab1|lab2
-        lockManager.releaseLock(tid, pid, Permissions.READ_ONLY);
-        lockManager.releaseLock(tid, pid, Permissions.READ_WRITE);
-    }
-
-    public void releaseReadPage(TransactionId tid,PageId pid) {
-        lockManager.releaseLock(tid, pid, Permissions.READ_ONLY);
+        lockManager.relLock(tid, pid);
     }
 
     /**
@@ -134,15 +115,14 @@ public class BufferPool {
     public void transactionComplete(TransactionId tid) throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
-        lockManager.releaseOccu(tid);
+        transactionComplete(tid, true);
     }
 
     /** Return true if the specified transaction has a lock on the specified page */
     public boolean holdsLock(TransactionId tid, PageId p) {
         // some code goes here
         // not necessary for lab1|lab2
-        return lockManager.holdsLock(tid, p, Permissions.READ_WRITE) ||
-                lockManager.holdsLock(tid, p, Permissions.READ_ONLY);
+        return lockManager.holdsLock(tid, p);
     }
 
     /**
@@ -159,13 +139,13 @@ public class BufferPool {
         if (commit)
             flushPages(tid);
         else {
-            _dirtiedLists.putIfAbsent(tid, new HashSet<PageId>());
-            Set<PageId> tranDirties = _dirtiedLists.get(tid);
-            for (PageId disPid : tranDirties)
-                discardPage(disPid);
+            Iterator<PageId> itr = lockManager.getWrittenPage(tid).iterator();
+            while (itr.hasNext()) {
+                PageId pid = itr.next();
+                discardPage(pid);
+            }
         }
-        _dirtiedLists.remove(tid);
-        transactionComplete(tid);
+        lockManager.relTrans(tid);
     }
 
     /**
@@ -221,18 +201,14 @@ public class BufferPool {
         throws DbException {
         Page curPg;
         Iterator<Page> pgItr = dirtyPages.iterator();
-        _dirtiedLists.putIfAbsent(tid, new HashSet<PageId>());
-        Set<PageId> dirtyList = _dirtiedLists.get(tid);
 
         while (pgItr.hasNext()) {
-            if (_pidMappedPage.size() == _maxPageNum)
-                evictPage();
             curPg = pgItr.next();
-            _pidMappedPage.put(curPg.getId(), curPg);
-            cleanPages.remove(curPg.getId());
-//            int echoSize = _pidMappedPage.size();
+            if (!_pidMappedPage.containsKey(curPg.getId()) &&
+                    _pidMappedPage.size() == _maxPageNum)
+                evictPage();
             curPg.markDirty(true, tid);
-            dirtyList.add(curPg.getId());
+            _pidMappedPage.put(curPg.getId(), curPg);
         }
     }
 
@@ -253,9 +229,6 @@ public class BufferPool {
             pg.setBeforeImage();
             pg.markDirty(false, null);
         }
-        cleanPages.clear();
-        cleanPages.addAll(_pidMappedPage.keySet());
-        _dirtiedLists.clear();
     }
 
     /** Remove the specific page id from the buffer pool.
@@ -270,14 +243,13 @@ public class BufferPool {
         // some code goes here
         // not necessary for lab1
         _pidMappedPage.remove(pid);
-        cleanPages.remove(pid);
     }
 
     /**
      * Flushes a certain page to disk
      * @param pid an ID indicating the page to flush
      */
-    private synchronized  void flushPage(PageId pid) throws IOException {
+    private synchronized void flushPage(PageId pid) throws IOException {
         // some code goes here
         // not necessary for lab1
         Page pg = _pidMappedPage.get(pid);
@@ -286,10 +258,8 @@ public class BufferPool {
             return;
         DbFile f = Database.getCatalog().getDatabaseFile(pg.getId().getTableId());
         f.writePage(pg);
-        _dirtiedLists.get(pg.isDirty()).remove(pid);
         pg.markDirty(false, null);
         pg.setBeforeImage();
-        cleanPages.add(pid);
     }
 
     /** Write all pages of the specified transaction to disk.
@@ -297,43 +267,36 @@ public class BufferPool {
     public synchronized  void flushPages(TransactionId tid) throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
-//        lockManager.
-        _dirtiedLists.putIfAbsent(tid, new HashSet<PageId>());
-        Set<PageId> tranDirties = _dirtiedLists.get(tid);
-        Iterator<PageId> itr = tranDirties.iterator();
+
+        Iterator<PageId> itr = lockManager.getWrittenPage(tid).iterator();
         while (itr.hasNext()) {
             PageId pid = itr.next();
             Page pg = _pidMappedPage.get(pid);
-            if (pg == null || pg.isDirty() == null)
-                return;
-            DbFile f = Database.getCatalog().getDatabaseFile(pg.getId().getTableId());
-            f.writePage(pg);
-            pg.setBeforeImage();
-            itr.remove();
-            pg.markDirty(false, null);
-            cleanPages.add(pid);
+            if (pg != null) {
+                DbFile f = Database.getCatalog().getDatabaseFile(pid.getTableId());
+                f.writePage(pg);
+                pg.setBeforeImage();
+                pg.markDirty(false, null);
+            }
         }
-    }
 
+    }
     /**
      * Discards a page from the buffer pool.
      * Flushes the page to disk to ensure dirty pages are updated on disk.
      */
-    private synchronized  void evictPage() throws DbException {
+    private synchronized void evictPage() throws DbException {
         // some code goes here
         // not necessary for lab1
 
-        Random rand = new Random();
-        if (cleanPages.size() == 0)
-            throw new DbException("No clean page for evict algorithm");
-        PageId pid = (PageId) ((Object[]) cleanPages.toArray())[rand.nextInt(cleanPages.size())];
-        try {
-            flushPage(pid);
-            _pidMappedPage.remove(pid);
-            cleanPages.remove(pid);
-        } catch (IOException e) {
-            throw new DbException("Writing Failed: Can not write file on disk");
+        Iterator<Map.Entry<PageId, Page>> itr = _pidMappedPage.entrySet().iterator();
+        while (itr.hasNext()) {
+            Page pg = itr.next().getValue();
+            if (pg.isDirty() == null) {
+                itr.remove();
+                return;
+            }
         }
+        throw new DbException("No available page for eviction");
     }
-
 }

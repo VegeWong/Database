@@ -1,301 +1,222 @@
 package simpledb;
 
+
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.LockSupport;
 
-import static simpledb.Permissions.READ_ONLY;
-import static simpledb.Permissions.READ_WRITE;
-
-public class LockManager {
-
+class LockManager {
     class LockStatus {
-        public PageId pid;
-        public Permissions per;
+        private int s;
+        private PageId pid;
 
-        public LockStatus(PageId pid, Permissions per) {
+        public LockStatus(PageId pid) {
+            s = 0;
             this.pid = pid;
-            this.per = per;
         }
 
-        public boolean equals(Object ls) {
-            if (this == ls)
-                return true;
-            if (!(ls instanceof LockStatus))
-                return false;
-            LockStatus lss = (LockStatus) ls;
-            return this.pid.equals(lss.pid) && this.per == lss.per;
-        }
-    }
-
-    class OrderedLock {
-        public TransactionId tid;
-        public Permissions per;
-        public Thread t;
-
-        public OrderedLock(TransactionId tid, Permissions per, Thread t) {
-            this.tid = tid;
-            this.per = per;
-            this.t = t;
-        }
-
-        public boolean equals(Object o) {
-            if (this == o)
-                return true;
-            if (!(o instanceof OrderedLock))
-                return false;
-            OrderedLock oo = (OrderedLock) o;
-            return this.tid.equals(oo.tid) && this.per == oo.per;
-        }
-    }
-
-
-    private Map<PageId, Lock> locks;
-    private Map<TransactionId, List<LockStatus>> tranOccu;
-    private Map<PageId, Set<TransactionId>> lockRegister;
-    private Map<PageId, List<OrderedLock>> waitQueues;
-    private Map<TransactionId, PageId> blocks;
-
-    public LockManager() {
-        locks = new ConcurrentHashMap<PageId, Lock>();
-        tranOccu = new ConcurrentHashMap<TransactionId, List<LockStatus>>();
-        lockRegister = new ConcurrentHashMap<PageId, Set<TransactionId>>();
-        waitQueues = new ConcurrentHashMap<PageId, List<OrderedLock>>();
-        blocks = new ConcurrentHashMap<TransactionId, PageId>();
-    }
-
-    private synchronized void signInWait(TransactionId tid, PageId pid,
-                            Permissions per, Thread t)
-            throws TransactionAbortedException {
-        synchronized (blocks) {
-            if (hasDeadlock(tid, pid))
-                throw new TransactionAbortedException();
-            blocks.putIfAbsent(tid, pid);
-        }
-        waitQueues.putIfAbsent(pid, new LinkedList<OrderedLock>());
-        List<OrderedLock> queue = waitQueues.get(pid);
-        synchronized (queue) {
-            OrderedLock olock = new OrderedLock(tid, per, t);
-            if (!queue.contains(olock))
-                queue.add(olock);
-        }
-    }
-
-    private void signOutWait(TransactionId tid, PageId pid)
-                            throws TransactionAbortedException {
-        blocks.remove(tid);
-        List<OrderedLock> queue = waitQueues.get(pid);
-        if (queue == null)
-            return;
-        synchronized (queue) {
-            queue.remove(tid);
-        }
-    }
-
-    private void step(PageId pid) {
-        List<OrderedLock> queue = waitQueues.get(pid);
-        OrderedLock o;
-        if (queue == null)
-            return;
-        synchronized (queue) {
-            if (queue.size() == 0)
-                return;
-            o = queue.remove(0);
-        }
-        synchronized (blocks) {
-            blocks.remove(o.tid);
-        }
-        LockSupport.unpark(o.t);
-    }
-
-    public boolean holdsLock(TransactionId tid, PageId pid, Permissions per) {
-        tranOccu.putIfAbsent(tid, new LinkedList<LockStatus>());
-        List<LockStatus> occu = tranOccu.get(tid);
-        LockStatus status = new LockStatus(pid, per);
-        synchronized (occu) {
-            return occu.contains(status);
-        }
-    }
-
-    public boolean getLock(TransactionId tid, PageId pid, Permissions per)
-            throws TransactionAbortedException {
-        if (per == READ_ONLY)
-            return getSlock(tid, pid);
-        else
-            return getXlock(tid, pid);
-    }
-
-    public boolean getSlock(TransactionId tid, PageId pid)
-            throws TransactionAbortedException {
-        LockStatus ls = new LockStatus(pid, READ_ONLY);
-        tranOccu.putIfAbsent(tid, new LinkedList<LockStatus>());
-        List<LockStatus> occu = tranOccu.get(tid);
-        lockRegister.putIfAbsent(pid, new HashSet<TransactionId>());
-        Set<TransactionId> holders = lockRegister.get(pid);
-        synchronized (occu) {
-            if (occu.contains(new LockStatus(pid, READ_WRITE)))
-                return true;
-            if (occu.contains(ls))
-                return true;
-        }
-
-        locks.putIfAbsent(pid, new Lock());
-        Lock lock = locks.get(pid);
-        if (!lock.getSlock()) {
+        public synchronized boolean getSlock(TransactionId tid)
+                throws TransactionAbortedException {
             while (true) {
-                Thread t = Thread.currentThread();
-                signInWait(tid, pid, READ_ONLY, t);
-                LockSupport.park();
-                if (lock.getSlock())
-                    break;
-            }
-        }
-        synchronized (occu) {
-            occu.add(ls);
-        }
-        synchronized (holders) {
-            holders.add(tid);
-        }
-
-        return true;
-    }
-
-    public boolean getXlock(TransactionId tid, PageId pid)
-            throws TransactionAbortedException {
-        LockStatus lsr = new LockStatus(pid, READ_ONLY);
-        LockStatus lsw = new LockStatus(pid, READ_WRITE);
-        locks.putIfAbsent(pid, new Lock());
-        Lock lock = locks.get(pid);
-        tranOccu.putIfAbsent(tid, new LinkedList<LockStatus>());
-        List<LockStatus> occu = tranOccu.get(tid);
-        lockRegister.putIfAbsent(pid, new HashSet<TransactionId>());
-        Set<TransactionId> holders = lockRegister.get(pid);
-        synchronized (occu) {
-            if (occu.contains(lsw))
-                return true;
-            if (occu.contains(lsr) && lock.upgradeLock()) {
-                occu.remove(lsr);
-                occu.add(lsw);
-                return true;
-            }
-        }
-
-
-        if (!lock.getXlock()) {
-            while (true) {
-                Thread t = Thread.currentThread();
-                signInWait(tid, pid, READ_WRITE, t);
-//                LockSupport.park();
-                synchronized (occu) {
-                    if (occu.contains(lsr) && lock.upgradeLock()) {
-                        occu.remove(lsr);
-                        occu.add(lsw);
-                        return true;
+                if (s >= 0) {
+                    s += 1;
+                    blocking.remove(tid);
+                    return true;
+                }
+                else {
+                    if (hasDeadLock(tid, pid))
+                        throw new TransactionAbortedException();
+                    blocking.putIfAbsent(tid, pid);
+                    try {wait();} catch (InterruptedException e) {
+                        e.printStackTrace();
                     }
                 }
-                if (lock.getXlock())
-                    break;
             }
         }
 
-        synchronized (occu) {
-            occu.add(lsw);
+        public synchronized boolean relSlock() {
+            if (s > 0) {
+                s -= 1;
+                notifyAll();
+                return true;
+            }
+            return false;
         }
-        synchronized (holders) {
-            holders.add(tid);
+
+        public synchronized boolean getXlock(TransactionId tid, boolean holdsSlock)
+                throws TransactionAbortedException {
+            while (true) {
+                if (s == 0 || (s == 1 && holdsSlock)) {
+                    s = -1;
+                    blocking.remove(tid);
+                    return true;
+                }
+                else {
+                    if (hasDeadLock(tid, pid))
+                        throw new TransactionAbortedException();
+                    blocking.putIfAbsent(tid, pid);
+                    try {wait();} catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
         }
-        return true;
+
+        public synchronized boolean relXlock() {
+            if (s == -1) {
+                s = 0;
+                notifyAll();
+                return true;
+            }
+            return false;
+        }
+
+        public synchronized boolean uniqueSlock() {
+            return (s == 1);
+        }
+
+        public synchronized boolean updateSlock() {
+            if (s == 1) {
+                s = -1;
+                return true;
+            }
+            return false;
+        }
+
+
     }
 
+    private Map<PageId, LockStatus> pid2ls;
+    private Map<TransactionId, Map<PageId, Permissions>> tid2pids;
+    private Map<TransactionId, PageId> blocking;
+    private Map<PageId, Map<TransactionId, Permissions>> pid2tids;
 
-    public boolean releaseLock(TransactionId tid, PageId pid, Permissions per) {
-        LockStatus ls = new LockStatus(pid, per);
+    public LockManager() {
+        pid2ls = new ConcurrentHashMap<PageId, LockStatus>();
+        tid2pids = new ConcurrentHashMap<TransactionId, Map<PageId, Permissions>>();
+        blocking = new ConcurrentHashMap<TransactionId, PageId>();
+        pid2tids = new ConcurrentHashMap<PageId, Map<TransactionId, Permissions>>();
+    }
 
-        tranOccu.putIfAbsent(tid, new LinkedList<LockStatus>());
-        List<LockStatus> occu = tranOccu.get(tid);
-        synchronized (occu) {
-            if (!occu.remove(ls))
-                return false;
-        }
-        lockRegister.putIfAbsent(pid, new HashSet<TransactionId>());
-        Set<TransactionId> holders = lockRegister.get(pid);
-        synchronized (holders) {
-            holders.remove(tid);
-        }
+    public boolean getLock(TransactionId tid, PageId pid, Permissions perm)
+            throws TransactionAbortedException {
+        pid2ls.putIfAbsent(pid, new LockStatus(pid));
+        tid2pids.putIfAbsent(tid, new ConcurrentHashMap<PageId, Permissions>());
+        pid2tids.putIfAbsent(pid, new ConcurrentHashMap<TransactionId, Permissions>());
+        LockStatus ls = pid2ls.get(pid);
+        Map<PageId, Permissions> pidPerms = tid2pids.get(tid);
+        Map<TransactionId, Permissions> tidPerms = pid2tids.get(pid);
+        Permissions curPerm = pidPerms.get(pid);
 
-        locks.putIfAbsent(pid, new Lock());
-        boolean res = per.permLevel == 0? locks.get(pid).releaseSlock() :
-                locks.get(pid).releaseXlock();
-        if (res) {
-            step(pid);
+        boolean res;
+        boolean holdsLock = false;
+        if (curPerm != null) {
+            holdsLock = true;
+            if (curPerm.permLevel >= perm.permLevel)
+                return true;
+            else {
+                if (ls.uniqueSlock()) {
+                    pidPerms.replace(pid, Permissions.READ_WRITE);
+                    return ls.updateSlock();
+                }
+            }
         }
+        if (perm == Permissions.READ_WRITE) {
+            res = ls.getXlock(tid, holdsLock);
+        }
+        else
+            res = ls.getSlock(tid);
+        pidPerms.put(pid, perm);
+        tidPerms.put(tid, perm);
         return res;
     }
 
+    public boolean relLock(TransactionId tid, PageId pid) {
+        pid2ls.putIfAbsent(pid, new LockStatus(pid));
+        tid2pids.putIfAbsent(tid, new ConcurrentHashMap<PageId, Permissions>());
+        pid2tids.putIfAbsent(pid, new ConcurrentHashMap<TransactionId, Permissions>());
+        LockStatus ls = pid2ls.get(pid);
+        Map<PageId, Permissions> pidPerms = tid2pids.get(tid);
+        Map<TransactionId, Permissions> tidPerms = pid2tids.get(pid);
+        Permissions curPerm = pidPerms.remove(pid);
+        tidPerms.remove(tid);
 
-    public void releaseOccu(TransactionId tid) {
-        List<LockStatus> occu = tranOccu.remove(tid);
-        if (occu == null)
-            return;
-        synchronized (occu) {
-            Iterator<LockStatus> itr = occu.iterator();
-            while (itr.hasNext()) {
-                LockStatus ls = itr.next();
-                itr.remove();
-
-                lockRegister.putIfAbsent(ls.pid, new HashSet<TransactionId>());
-                Set<TransactionId> holders = lockRegister.get(ls.pid);
-                synchronized (holders) {
-                    holders.remove(tid);
-                }
-                locks.putIfAbsent(ls.pid, new Lock());
-                boolean res = ls.per.permLevel == 0 ? locks.get(ls.pid).releaseSlock() :
-                        locks.get(ls.pid).releaseXlock();
-                if (res) {
-                    step(ls.pid);
-                }
-            }
-        }
+        if (curPerm == null)
+            return false;
+        else if (curPerm == Permissions.READ_WRITE)
+            return ls.relXlock();
+        else
+            return ls.relSlock();
     }
 
-    public synchronized boolean hasDeadlock(TransactionId tid, PageId pid) {
-        Set<TransactionId> holders;
-        Stack<TransactionId> stack = new Stack<TransactionId>();
-        Set<TransactionId> visit = new HashSet<TransactionId>();
+    public void relTrans(TransactionId tid) {
+        tid2pids.putIfAbsent(tid, new ConcurrentHashMap<PageId, Permissions>());
+        Map<PageId, Permissions> pidPerms = tid2pids.remove(tid);
 
-        holders = lockRegister.get(pid);
-        synchronized (holders) {
-            for (TransactionId mt : holders) {
-                if (!mt.equals(tid))
-                    stack.add(mt);
+        synchronized (pidPerms) {
+            for (Map.Entry<PageId, Permissions> e : pidPerms.entrySet()) {
+                PageId pid = e.getKey();
+                pid2tids.putIfAbsent(pid, new ConcurrentHashMap<TransactionId, Permissions>());
+                Map<TransactionId, Permissions> tidPerms = pid2tids.get(pid);
+                tidPerms.remove(tid);
+                LockStatus ls = pid2ls.get(pid);
+                if (e.getValue() == Permissions.READ_WRITE)
+                    ls.relXlock();
+                else
+                    ls.relSlock();
             }
         }
-        while (!stack.empty()) {
-            TransactionId nowt = stack.peek();
-            if (visit.contains(nowt)) {
-                stack.pop();
-                visit.remove(nowt);
-                continue;
+
+        blocking.remove(tid);
+    }
+
+    public boolean holdsLock(TransactionId tid, PageId pid) {
+        tid2pids.putIfAbsent(tid, new ConcurrentHashMap<PageId, Permissions>());
+        Map<PageId, Permissions> pidPerms = tid2pids.get(tid);
+        return pidPerms.containsKey(pid);
+    }
+
+    public synchronized boolean hasDeadLock(TransactionId tid, PageId pid) {
+        Stack<TransactionId> ts = new Stack<TransactionId>();
+        Set<TransactionId> visit = new HashSet<TransactionId>();
+
+        visit.add(tid);
+        for (Map.Entry<TransactionId, Permissions> e : pid2tids.get(pid).entrySet()) {
+            TransactionId nt = e.getKey();
+            if (!nt.equals(tid))
+                ts.push(nt);
+        }
+        while (!ts.empty()) {
+            TransactionId ct = ts.peek();
+            if (visit.contains(ct)) {
+                ts.pop();
+                visit.remove(ct);
             }
-            visit.add(nowt);
-            PageId nxtPid = blocks.get(nowt);
-            if (nxtPid == null)
+            visit.add(ct);
+            PageId waitPg = blocking.get(ct);
+            if (waitPg == null)
                 continue;
-            holders = lockRegister.get(nxtPid);
-            synchronized (holders) {
-                Iterator<TransactionId> itr = holders.iterator();
-                while (itr.hasNext()) {
-                    TransactionId nxtt = itr.next();
-                    if (visit.contains(nxtt)) {
-//                        System.err.println(Thread.currentThread().toString() + " aborted, "+ tid.toString() + ":" + visit.toString());
-                        return true;
-                    }
-                    else
-                        stack.add(nxtt);
-                }
+            for (Map.Entry<TransactionId, Permissions> e : pid2tids.get(waitPg).entrySet()) {
+                TransactionId nt = e.getKey();
+                if (visit.contains(nt))
+                    return true;
+                else
+                    ts.push(nt);
             }
         }
         return false;
+    }
+
+    public Set<PageId> getWrittenPage(TransactionId tid) {
+        tid2pids.putIfAbsent(tid, new ConcurrentHashMap<PageId, Permissions>());
+        Map<PageId, Permissions> pidPerms = tid2pids.get(tid);
+        Set<PageId> writtenPages = new HashSet<PageId>();
+        synchronized (pidPerms) {
+            for (Map.Entry<PageId, Permissions> e : pidPerms.entrySet()) {
+                if (e.getValue() == Permissions.READ_WRITE)
+                    writtenPages.add(e.getKey());
+            }
+        }
+        return writtenPages;
     }
 
 }
