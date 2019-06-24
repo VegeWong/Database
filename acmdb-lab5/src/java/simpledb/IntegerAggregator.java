@@ -1,7 +1,5 @@
 package simpledb;
 
-import javafx.util.Pair;
-import org.omg.CORBA.Object;
 
 import java.util.ArrayList;
 import java.util.HashMap;
