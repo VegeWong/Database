@@ -59,6 +59,7 @@ public class BTreeTest extends SimpleDbTestBase {
 			while(!thread.succeeded() && thread.getError() == null) {
 				Thread.sleep(POLL_INTERVAL);
 			}
+//			System.err.println(thread.getName() + " " +  thread.succeeded());
 		}
 	}
 	
@@ -115,7 +116,7 @@ public class BTreeTest extends SimpleDbTestBase {
 			// more time to avoid too many deadlock situations
 			Thread.sleep(r.nextInt(POLL_INTERVAL));
 		}
-		
+
 		for(int i = 0; i < 800; i++) {
 			BTreeInserter bi = startInserter(bf, getRandomTupleData(), insertedTuples);
 			insertThreads.add(bi);
@@ -124,7 +125,7 @@ public class BTreeTest extends SimpleDbTestBase {
 		// wait for all threads to finish
 		waitForInserterThreads(insertThreads);	
 		assertTrue(insertedTuples.size() > size);
-		
+
 		// now insert and delete tuples at the same time
 		System.out.println("Inserting and deleting tuples...");
     	ArrayList<BTreeDeleter> deleteThreads = new ArrayList<BTreeDeleter>();
@@ -133,33 +134,33 @@ public class BTreeTest extends SimpleDbTestBase {
     		BTreeDeleter bd = startDeleter(bf, insertedTuples);
     		deleteThreads.add(bd);
 		}
-		
+
 		// wait for all threads to finish
 		waitForInserterThreads(insertThreads);
 		waitForDeleterThreads(deleteThreads);
 		int numPages = bf.numPages();
 		size = insertedTuples.size();
-		
+
 		// now delete a bunch of tuples
 		System.out.println("Deleting tuples...");
 		for(int i = 0; i < 10; i++) {
 	    	for(BTreeDeleter thread : deleteThreads) {
 				thread.rerun(bf, insertedTuples);
 			}
-			
+
 			// wait for all threads to finish
 	    	waitForDeleterThreads(deleteThreads);
 		}
 		assertTrue(insertedTuples.size() < size);
 		size = insertedTuples.size();
-		
+
 		// now insert a bunch of random tuples again
 		System.out.println("Inserting tuples...");
 		for(int i = 0; i < 10; i++) {
 	    	for(BTreeInserter thread : insertThreads) {
 				thread.rerun(bf, getRandomTupleData(), insertedTuples);
 			}
-		
+
 			// wait for all threads to finish
 	    	waitForInserterThreads(insertThreads);
 		}
@@ -167,11 +168,11 @@ public class BTreeTest extends SimpleDbTestBase {
 		size = insertedTuples.size();
 		// we should be reusing the deleted pages
 		assertTrue(bf.numPages() < numPages + 20);
-		
+
 		// kill all the threads
 		insertThreads = null;
 		deleteThreads = null;
-		
+
 		ArrayList<ArrayList<Integer>> tuplesList = new ArrayList<ArrayList<Integer>>();
 		tuplesList.addAll(insertedTuples);
 		TransactionId tid = new TransactionId();
